@@ -1,28 +1,29 @@
-FROM centos:7
-ARG BASE
-RUN [ ! -z "$BASE" ] || (>&2 echo You must specify a URL at build time with --build-arg BASE=http://... && exit 1)
+FROM nvidia/cuda:7.0-cudnn4-runtime
 
-ENV CUDA cuda_7.0.28_linux.run
-ENV CUDNN cudnn-6.5-linux-x64-v2
+ARG DEBIAN_FRONTEND=noninteractive
+RUN \
+  apt-get update && \
+  apt-get -y install python-numpy swig wget gcc perl unzip zlib1g-dev tar python-dev python-pip file git curl && \
+  rm -rf /var/lib/apt/lists/*
 
-RUN yum -y install epel-release && yum -y update && yum -y install numpy swig wget gcc perl java-1.8.0-openjdk-devel gcc-c++ unzip zlib-devel tar which python-devel python-pip file git && yum clean all
-RUN curl -L $BASE/$CUDA > /tmp/cuda.run && sh /tmp/cuda.run --silent --toolkit --override && rm -f /tmp/cuda.run
-RUN curl -L $BASE/${CUDNN}.tgz > /tmp/${CUDNN}.tgz && tar -C /tmp -x --no-same-owner -f /tmp/${CUDNN}.tgz && cp /tmp/$CUDNN/cudnn.h /usr/local/cuda/include && cp /tmp/$CUDNN/libcudnn* /usr/local/cuda/lib64 && rm -rf /tmp/${CUDNN}*
-
-RUN echo 'export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/usr/local/cuda/lib64"' >> /etc/profile.d/cuda.sh
-RUN echo 'export CUDA_HOME=/usr/local/cuda' >> /etc/profile.d/cuda.sh
-ENV JAVA_HOME /usr/lib/jvm/java-1.8.0
-
-RUN curl -L https://github.com/bazelbuild/bazel/releases/download/0.1.1/bazel-0.1.1-installer-linux-x86_64.sh > /opt/bazel-installer.sh && chmod +x /opt/bazel-installer.sh && /opt/bazel-installer.sh && rm /opt/bazel-installer.sh
 RUN pip install wheel
 
-RUN adduser -m user
-USER user
-WORKDIR /home/user
-RUN git clone --recurse-submodules -b 0.6.0 https://github.com/tensorflow/tensorflow.git
-WORKDIR /home/user/tensorflow
+RUN useradd -m user
+COPY tensorflow-0.9.0rc0-cp27-none-linux_x86_64.whl /tmp/tensorflow_pkg/
+RUN pip install /tmp/tensorflow_pkg/*
+RUN pip install jupyter
 
-RUN (echo; echo Y; echo; echo) | ./configure 
-RUN bazel --batch fetch --config=cuda //tensorflow/tools/pip_package:build_pip_package
-RUN bazel --batch build --fetch=false -c opt --config=cuda --spawn_strategy=standalone --genrule_strategy=standalone //tensorflow/tools/pip_package:build_pip_package
-RUN bazel-bin/tensorflow/tools/pip_package/build_pip_package /tmp/tensorflow_pkg
+RUN curl -L https://github.com/krallin/tini/releases/download/v0.6.0/tini > tini && \
+    echo "d5ed732199c36a1189320e6c4859f0169e950692f451c03e7854243b95f4234b *tini" | sha256sum -c - && \
+    mv tini /usr/local/bin/tini && \
+    chmod +x /usr/local/bin/tini
+
+RUN ln -s libcudnn.so.4 /usr/lib/x86_64-linux-gnu/libcudnn.so
+
+USER user
+RUN mkdir -p /home/user/notebooks
+WORKDIR /home/user/notebooks
+RUN mkdir -p -m 700 ~/.jupyter && echo "c.NotebookApp.ip = '*'" >> ~/.jupyter/jupyter_notebook_config.py
+#ENV LD_LIBRARY_PATH $LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu/
+ENTRYPOINT ["tini", "--"]
+CMD ["jupyter", "notebook", "--no-browser"]

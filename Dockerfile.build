@@ -1,0 +1,30 @@
+FROM nvidia/cuda:7.0-cudnn4-devel
+
+ARG DEBIAN_FRONTEND=noninteractive
+RUN \
+  apt-get update && apt-get install -y software-properties-common && \
+  echo oracle-java8-installer shared/accepted-oracle-license-v1-1 select true | debconf-set-selections && \
+  add-apt-repository -y ppa:webupd8team/java && \
+  apt-get update && \
+  apt-get install -y oracle-java8-installer && \
+  apt-get -y install python-numpy swig wget gcc perl unzip zlib1g-dev tar python-dev python-pip file git curl && \
+  rm -rf /var/lib/apt/lists/* && \
+  rm -rf /var/cache/oracle-jdk8-installer
+
+RUN curl -L https://github.com/bazelbuild/bazel/releases/download/0.2.3/bazel-0.2.3-installer-linux-x86_64.sh > /opt/bazel-installer.sh && chmod +x /opt/bazel-installer.sh && /opt/bazel-installer.sh && rm /opt/bazel-installer.sh
+RUN pip install wheel
+
+RUN useradd -m user
+USER user
+WORKDIR /home/user
+ARG TF_BRANCH=r0.9
+RUN git clone --recurse-submodules --depth=1 --single-branch -b ${TF_BRANCH} https://github.com/tensorflow/tensorflow.git
+WORKDIR /home/user/tensorflow
+
+ARG CUDA_VERSION=3.0
+RUN printf  "\n\ny\n\n\n\n\n${CUDA_VERSION}\n" | ./configure
+
+RUN bazel --batch fetch --config=cuda //tensorflow/tools/pip_package:build_pip_package
+RUN bazel --batch build --fetch=false -c opt --config=cuda --spawn_strategy=standalone --genrule_strategy=standalone //tensorflow/tools/pip_package:build_pip_package
+
+RUN bazel-bin/tensorflow/tools/pip_package/build_pip_package /tmp/tensorflow_pkg
