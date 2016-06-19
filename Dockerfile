@@ -18,8 +18,6 @@ RUN curl -L https://github.com/krallin/tini/releases/download/v0.6.0/tini > tini
     mv tini /usr/local/bin/tini && \
     chmod +x /usr/local/bin/tini
 
-RUN ln -s libcudnn.so.4 /usr/lib/x86_64-linux-gnu/libcudnn.so
-
 USER user
 RUN mkdir -p /home/user/notebooks
 WORKDIR /home/user/notebooks
